@@ -1,4 +1,5 @@
 use crate::autodiff::{Dual, Functor};
+use crate::sparse_matrix::{CsrBlockMatrix};
 
 extern crate nalgebra as na;
 
@@ -19,10 +20,11 @@ impl ParameterBlock {
 
 pub trait ResidualVec {
     fn eval(&self, params: &Vec<f64>, values: &mut Vec<f64>) -> bool;
-    fn jacobian(&self, params: &Vec<f64>, jacob: &mut Vec<Vec<f64>>, cols: &mut Vec<usize>)
+    fn jacobian(&self, params: &Vec<f64>, jacob: &mut Vec<na::DMatrix<f64>>)
         -> bool;
 
     fn num_residuals(&self) -> usize;
+    fn parameters(&self) -> &Vec<ParameterBlock>;
 }
 
 pub struct AutoDiffResidualVec<T: Functor> {
@@ -49,11 +51,14 @@ impl<T: Functor> ResidualVec for AutoDiffResidualVec<T> {
         self.f.invoke(&param_blocks, values)
     }
 
+    fn parameters(&self) -> &Vec<ParameterBlock> {
+        &self.params
+    }
+
     fn jacobian(
         &self,
         params: &Vec<f64>,
-        jacob: &mut Vec<Vec<f64>>,
-        cols: &mut Vec<usize>,
+        jacob: &mut Vec<na::DMatrix<f64>>,
     ) -> bool {
         let mut v = params
             .iter()
@@ -61,6 +66,7 @@ impl<T: Functor> ResidualVec for AutoDiffResidualVec<T> {
             .collect::<Vec<Dual>>();
 
         for block in &self.params {
+            let mut jacob_columns = Vec::<na::DVector<f64>>::new();
             for i in block.offset..(block.offset + block.size) {
                 v[i].b = 1.0;
 
@@ -75,11 +81,12 @@ impl<T: Functor> ResidualVec for AutoDiffResidualVec<T> {
                     return false;
                 }
 
-                jacob.push(residuals.iter().map(|x| x.b).collect());
-                cols.push(i);
+                jacob_columns.push(na::DVector::from_vec(residuals.iter().map(|x| x.b).collect()));
 
                 v[i].b = 0.0;
             }
+
+            jacob.push(na::DMatrix::from_columns(&jacob_columns));
         }
 
         true
@@ -181,25 +188,28 @@ impl TrustRegionSolver {
         p: &NonlinearLeastSquaresProblem,
     ) -> Option<(na::DVector<f64>, na::DVector<f64>, na::DMatrix<f64>)> {
         let sum_num_residuals = p.residuals.iter().map(|x| x.num_residuals()).sum();
-        let mut jac = na::DMatrix::<f64>::zeros(sum_num_residuals, self.params.len());
         let mut val = na::DVector::<f64>::zeros(sum_num_residuals);
+
+        let mut j = CsrBlockMatrix::<f64>::new();
 
         let mut row_pos = 0;
         for residual in &p.residuals {
-            let mut residual_jacob = Vec::<Vec<f64>>::new();
+            let mut residual_jacob = Vec::<na::DMatrix<f64>>::new();
             let mut residual_val = vec![0.0; residual.num_residuals()];
-            let mut residual_cols = Vec::<usize>::new();
 
-            if !residual.jacobian(&self.params, &mut residual_jacob, &mut residual_cols) {
+            if !residual.jacobian(&self.params, &mut residual_jacob) {
                 return None;
             }
 
-            for col_idx in 0..residual_cols.len() {
-                jac.slice_mut(
-                    (row_pos, residual_cols[col_idx]),
-                    (residual.num_residuals(), 1),
-                )
-                .copy_from_slice(&residual_jacob[col_idx]);
+            j.add_row(residual.num_residuals());
+
+            let mut it = residual.parameters().iter().zip(&residual_jacob).collect::<Vec<_>>();
+            it.sort_by_key(|(a, b)| a.offset);
+
+            for (param_block, jacob_block) in it {
+                if !j.add_row_block(param_block.offset, &jacob_block) {
+                    return None;
+                }
             }
 
             if !residual.eval(&self.params, &mut residual_val) {
@@ -211,6 +221,8 @@ impl TrustRegionSolver {
 
             row_pos = row_pos + residual.num_residuals()
         }
+
+        let jac = j.to_dense_matrix();
 
         let grad = jac.transpose() * &val;
 
