@@ -10,4 +10,5 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 nalgebra = "*"
 nalgebra-glm = "0.3"
+nalgebra-sparse = "0.1"
 num-traits = "0.2"
