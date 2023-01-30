@@ -149,10 +149,8 @@ impl TrustRegionMethod for LevenbergMarquardtMethod {
         jacobian: &CsrBlockMatrix<f64>,
         mu: f64,
     ) -> na::DVector<f64> {
-        let jac = jacobian.to_dense_matrix();
-
-        let jac_scale = (jac.transpose() * jac)
-            .diagonal()
+        let jac_scale = jacobian
+            .column_norm_squared()
             .map(|x| 1.0 / (1.0 + x.sqrt()));
 
         let jac_scaled = jacobian.scale_columns(&jac_scale);
@@ -220,7 +218,7 @@ impl TrustRegionSolver {
         let sum_num_residuals = p.residuals.iter().map(|x| x.num_residuals()).sum();
         let mut val = na::DVector::<f64>::zeros(sum_num_residuals);
 
-        let mut j = CsrBlockMatrix::<f64>::new();
+        let mut jacobian = CsrBlockMatrix::<f64>::new();
 
         let mut row_pos = 0;
         for residual in &p.residuals {
@@ -231,7 +229,7 @@ impl TrustRegionSolver {
                 return None;
             }
 
-            j.add_row(residual.num_residuals());
+            jacobian.add_row(residual.num_residuals());
 
             let mut it = residual
                 .parameters()
@@ -241,7 +239,7 @@ impl TrustRegionSolver {
             it.sort_by_key(|(a, b)| a.offset);
 
             for (param_block, jacob_block) in it {
-                if !j.add_row_block(param_block.offset, &jacob_block) {
+                if !jacobian.add_row_block(param_block.offset, &jacob_block) {
                     return None;
                 }
             }
@@ -256,11 +254,9 @@ impl TrustRegionSolver {
             row_pos = row_pos + residual.num_residuals()
         }
 
-        let jac = j.to_dense_matrix();
+        let grad = jacobian.transpose_and_mul(&val);
 
-        let grad = jac.transpose() * &val;
-
-        Some((val, grad, j))
+        Some((val, grad, jacobian))
     }
 
     fn need_next_iteration(&self) -> bool {
@@ -298,11 +294,11 @@ impl TrustRegionSolver {
 
     fn eval_model_function(
         &self,
-        jac: &na::DMatrix<f64>,
+        jac: &CsrBlockMatrix<f64>,
         val: &na::DVector<f64>,
         step: &na::DVector<f64>,
     ) -> f64 {
-        (jac * step + val).norm_squared() / 2.0
+        (jac.mul(step) + val).norm_squared() / 2.0
     }
 }
 
@@ -319,12 +315,8 @@ impl NonlinearLeastSquaresSolver for TrustRegionSolver {
 
                 let step = self.method.compute_step(&val, &jac, self.mu);
 
-                let m_p = self.eval_model_function(&jac.to_dense_matrix(), &val, &step);
-                let m_0 = self.eval_model_function(
-                    &jac.to_dense_matrix(),
-                    &val,
-                    &na::DVector::zeros(step.nrows()),
-                );
+                let m_p = self.eval_model_function(&jac, &val, &step);
+                let m_0 = self.eval_model_function(&jac, &val, &na::DVector::zeros(step.nrows()));
 
                 let x = na::DVector::from_vec(self.params.clone());
 

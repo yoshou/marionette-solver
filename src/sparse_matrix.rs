@@ -91,6 +91,46 @@ impl<T: na::Real> CsrBlockMatrix<T> {
         scaled
     }
 
+    pub fn mul(&self, v: &na::DVector<T>) -> na::DVector<T> {
+        let mut result = na::DVector::<T>::zeros(self.num_rows);
+
+        let mut i = 0;
+        for row_data in &self.rows {
+            for column_data in &row_data.columns {
+                let j = column_data.column;
+                let block = &column_data.data;
+
+                let block_vec = v.rows(j, block.ncols());
+
+                let mut result_block_vec = result.rows_mut(i, block.nrows());
+                result_block_vec.copy_from(&(&result_block_vec + block * block_vec));
+            }
+            i += row_data.num_block_rows;
+        }
+
+        result
+    }
+
+    pub fn transpose_and_mul(&self, v: &na::DVector<T>) -> na::DVector<T> {
+        let mut result = na::DVector::<T>::zeros(self.num_cols);
+
+        let mut i = 0;
+        for row_data in &self.rows {
+            for column_data in &row_data.columns {
+                let j = column_data.column;
+                let block = &column_data.data;
+
+                let block_vec = v.rows(i, block.nrows());
+
+                let mut result_block_vec = result.rows_mut(j, block.ncols());
+                result_block_vec.copy_from(&(&result_block_vec + block.transpose() * block_vec));
+            }
+            i += row_data.num_block_rows;
+        }
+
+        result
+    }
+
     pub fn column_norm_squared(&self) -> na::DVector<T> {
         let mut column_norm_squared = na::DVector::<T>::zeros(self.num_cols);
 
