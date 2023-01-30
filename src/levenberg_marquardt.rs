@@ -1,6 +1,7 @@
 extern crate nalgebra as na;
 
 use crate::sparse_matrix::CsrBlockMatrix;
+use nalgebra_sparse::factorization::CscCholesky;
 
 pub trait LevenbergMarquardtLinearSolver {
     fn solve(
@@ -61,6 +62,32 @@ impl LevenbergMarquardtLinearSolver for LevenbergMarquardtDenseNormalCholeskySol
 
         let cholesky = &lhs.cholesky().unwrap();
 
+        x.copy_from(&cholesky.solve(&rhs));
+    }
+}
+
+pub struct LevenbergMarquardtSparseNormalCholeskySolver {}
+
+impl LevenbergMarquardtLinearSolver for LevenbergMarquardtSparseNormalCholeskySolver {
+    fn solve(
+        &self,
+        jacobian: &CsrBlockMatrix<f64>,
+        diag: &na::DVector<f64>,
+        residuals: &na::DVector<f64>,
+        x: &mut na::DVector<f64>,
+    ) {
+        let jac = jacobian.to_sparse_matrix();
+
+        let mut diag_coo = nalgebra_sparse::coo::CooMatrix::<f64>::new(diag.nrows(), diag.nrows());
+        for i in 0..diag.nrows() {
+            diag_coo.push(i, i, diag[i] * diag[i]);
+        }
+
+        let lhs = jac.transpose() * &jac + nalgebra_sparse::csc::CscMatrix::from(&diag_coo);
+        let rhs = jacobian.transpose_and_mul(&residuals);
+
+        let cholesky = CscCholesky::factor(&lhs).unwrap();
+        
         x.copy_from(&cholesky.solve(&rhs));
     }
 }

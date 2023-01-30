@@ -1,6 +1,6 @@
 use crate::autodiff::{Dual, Functor};
 use crate::levenberg_marquardt::{
-    LevenbergMarquardtDenseNormalCholeskySolver, LevenbergMarquardtLinearSolver,
+    LevenbergMarquardtSparseNormalCholeskySolver, LevenbergMarquardtLinearSolver,
 };
 use crate::sparse_matrix::CsrBlockMatrix;
 
@@ -190,7 +190,7 @@ impl TrustRegionSolver {
             max_mu: 10000000000000000.0,
             function_tolerance: 1.0e-6,
             method: Box::new(LevenbergMarquardtMethod::new(Box::new(
-                LevenbergMarquardtDenseNormalCholeskySolver {},
+                LevenbergMarquardtSparseNormalCholeskySolver {},
             ))),
             iteration: TrustRegionSolverIteration {
                 num: 0,
