@@ -251,7 +251,7 @@ impl TrustRegionSolver {
             val.slice_mut((row_pos, 0), (residual.num_residuals(), 1))
                 .copy_from_slice(&residual_val);
 
-            row_pos = row_pos + residual.num_residuals()
+            row_pos = row_pos + residual.num_residuals();
         }
 
         let grad = jacobian.transpose_and_mul(&val);
