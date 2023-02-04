@@ -1,6 +1,6 @@
 extern crate nalgebra as na;
 
-use crate::problem::TrustRegionMethod;
+use crate::nls_problem::TrustRegionMethod;
 use crate::sparse_matrix::CsrBlockMatrix;
 use nalgebra_sparse::factorization::CscCholesky;
 

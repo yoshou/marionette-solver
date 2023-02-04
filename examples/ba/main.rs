@@ -10,7 +10,7 @@ use marionette_solver::levenberg_marquardt::{
     BundleAdjustmentProblemStructure, LevenbergMarquardtDenseSchurComplementSolver,
     LevenbergMarquardtMethod,
 };
-use marionette_solver::problem::{
+use marionette_solver::nls_problem::{
     AutoDiffResidualVec, NonlinearLeastSquaresProblem, NonlinearLeastSquaresSolver, ParameterBlock,
     TrustRegionSolver,
 };
