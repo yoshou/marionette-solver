@@ -1,4 +1,4 @@
-use crate::autodiff::{Dual, Functor};
+use crate::autodiff::{Dual, DualN, Functor};
 use crate::sparse_matrix::CsrBlockMatrix;
 
 extern crate nalgebra as na;
@@ -85,6 +85,87 @@ impl<T: Functor> ResidualVec for AutoDiffResidualVec<T> {
             }
 
             jacob.push(na::DMatrix::from_columns(&jacob_columns));
+        }
+
+        true
+    }
+
+    fn num_residuals(&self) -> usize {
+        self.f.num_residuals()
+    }
+}
+
+pub struct AutoDiffResidualVecNParam<T: Functor, const N: usize> {
+    f: T,
+    params: Vec<ParameterBlock>,
+}
+
+impl<T: Functor, const N: usize> AutoDiffResidualVecNParam<T, N> {
+    pub fn new(f: T, params: Vec<ParameterBlock>) -> Self {
+        Self {
+            f: f,
+            params: params,
+        }
+    }
+
+    fn create_ith_set_svector(i: usize, value: f64) -> na::SVector<f64, N> {
+        let mut vec = na::SVector::<f64, N>::zeros();
+        vec[i] = value;
+        vec
+    }
+}
+
+impl<T: Functor, const N: usize> ResidualVec for AutoDiffResidualVecNParam<T, N> {
+    fn eval(&self, params: &Vec<f64>, values: &mut Vec<f64>) -> bool {
+        let param_blocks = self
+            .params
+            .iter()
+            .map(|x| params[x.offset..(x.offset + x.size)].to_vec())
+            .collect();
+        self.f.invoke(&param_blocks, values)
+    }
+
+    fn parameters(&self) -> &Vec<ParameterBlock> {
+        &self.params
+    }
+
+    fn jacobian(&self, params: &Vec<f64>, jacob: &mut Vec<na::DMatrix<f64>>) -> bool {
+        let mut param_blocks = Vec::<Vec<DualN<N>>>::new();
+
+        let mut i = 0;
+        for param in &self.params {
+            let param_block = params[param.offset..(param.offset + param.size)]
+                .iter()
+                .enumerate()
+                .map(|(j, x)| DualN::<N> {
+                    a: *x,
+                    b: Self::create_ith_set_svector(i + j, 1.0),
+                })
+                .collect::<Vec<_>>();
+
+            param_blocks.push(param_block);
+
+            i += param.size;
+        }
+
+        let mut residuals = vec![DualN::<N>::default(); self.f.num_residuals()];
+
+        if !self.f.invoke(&param_blocks, &mut residuals) {
+            return false;
+        }
+
+        let mut i = 0;
+        for param in &self.params {
+            let mut jacob_columns = Vec::<na::DVector<f64>>::new();
+            for j in 0..param.size {
+                jacob_columns.push(na::DVector::from_vec(
+                    residuals.iter().map(|x| x.b[i + j]).collect(),
+                ));
+            }
+
+            jacob.push(na::DMatrix::from_columns(&jacob_columns));
+
+            i += param.size;
         }
 
         true

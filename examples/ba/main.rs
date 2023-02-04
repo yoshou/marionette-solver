@@ -11,8 +11,8 @@ use marionette_solver::levenberg_marquardt::{
     LevenbergMarquardtMethod,
 };
 use marionette_solver::nls_problem::{
-    AutoDiffResidualVec, NonlinearLeastSquaresProblem, NonlinearLeastSquaresSolver, ParameterBlock,
-    TrustRegionSolver,
+    AutoDiffResidualVecNParam, NonlinearLeastSquaresProblem, NonlinearLeastSquaresSolver,
+    ParameterBlock, TrustRegionSolver,
 };
 use marionette_solver::rotation::angle_axis_rotate_point;
 
@@ -99,13 +99,14 @@ fn main() {
     for i in 0..observations.len() {
         let functor = SnavelyReprojectionError::new(observations[i][0], observations[i][1]);
 
-        prob.residuals.push(Box::new(AutoDiffResidualVec::new(
-            functor,
-            vec![
-                camera_param_blocks[camera_idxs[i]],
-                point_param_blocks[point_idxs[i]],
-            ],
-        )));
+        prob.residuals
+            .push(Box::new(AutoDiffResidualVecNParam::<_, 12>::new(
+                functor,
+                vec![
+                    camera_param_blocks[camera_idxs[i]],
+                    point_param_blocks[point_idxs[i]],
+                ],
+            )));
     }
 
     let mut params = vec![0.0; num_params];
