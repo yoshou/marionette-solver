@@ -1,16 +1,16 @@
-extern crate lm_optimize;
+extern crate marionette_solver;
 
 use serde::Deserialize;
 use serde_json::Value;
 use std::fs::OpenOptions;
 use std::io::BufReader;
 
-use lm_optimize::autodiff::{angle_axis_rotate_point, Functor, ValueOrDerivative};
-use lm_optimize::levenberg_marquardt::{
+use marionette_solver::autodiff::{angle_axis_rotate_point, Functor, ValueOrDerivative};
+use marionette_solver::levenberg_marquardt::{
     BundleAdjustmentProblemStructure, LevenbergMarquardtDenseSchurComplementSolver,
     LevenbergMarquardtMethod,
 };
-use lm_optimize::problem::{
+use marionette_solver::problem::{
     AutoDiffResidualVec, NonlinearLeastSquaresProblem, NonlinearLeastSquaresSolver, ParameterBlock,
     TrustRegionSolver,
 };
