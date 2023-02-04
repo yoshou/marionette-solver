@@ -5,15 +5,15 @@ use nalgebra_sparse::{coo::CooMatrix};
 use nalgebra_sparse::csc::CscMatrix;
 
 #[derive(Clone)]
-struct CsrColumnData<T> {
-    column: usize,
-    data: T,
+pub struct CsrColumnData<T> {
+    pub column: usize,
+    pub data: T,
 }
 
 #[derive(Clone)]
-struct CsrRowData<T> {
-    columns: Vec<CsrColumnData<T>>,
-    num_block_rows: usize,
+pub struct CsrRowData<T> {
+    pub columns: Vec<CsrColumnData<T>>,
+    pub num_block_rows: usize,
 }
 impl<T> CsrRowData<T> {
     pub fn new(num_block_rows: usize) -> Self {
@@ -26,7 +26,7 @@ impl<T> CsrRowData<T> {
 
 #[derive(Clone)]
 pub struct CsrBlockMatrix<T: Scalar> {
-    rows: Vec<CsrRowData<na::DMatrix<T>>>,
+    pub rows: Vec<CsrRowData<na::DMatrix<T>>>,
     num_rows: usize,
     num_cols: usize,
 }
@@ -175,7 +175,7 @@ impl<T: na::RealField + Copy> CsrBlockMatrix<T> {
         m
     }
 
-    pub fn to_sparse_matrix(&self) -> CscMatrix<T> {
+    pub fn to_sparse_matrix(&self) -> CooMatrix<T> {
         let mut coo = CooMatrix::<T>::new(self.num_rows, self.num_cols);
 
         let mut i = 0;
@@ -193,7 +193,7 @@ impl<T: na::RealField + Copy> CsrBlockMatrix<T> {
             i += row_data.num_block_rows;
         }
 
-        CscMatrix::from(&coo)
+        coo
     }
 
     pub fn ncols(&self) -> usize {

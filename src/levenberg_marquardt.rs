@@ -76,19 +76,181 @@ impl LevenbergMarquardtLinearSolver for LevenbergMarquardtSparseNormalCholeskySo
         residuals: &na::DVector<f64>,
         x: &mut na::DVector<f64>,
     ) {
-        let jac = jacobian.to_sparse_matrix();
+        use nalgebra_sparse::{coo::CooMatrix, csc::CscMatrix};
 
-        let mut diag_coo = nalgebra_sparse::coo::CooMatrix::<f64>::new(diag.nrows(), diag.nrows());
+        let jac = CscMatrix::from(&jacobian.to_sparse_matrix());
+
+        let mut diag_coo = CooMatrix::<f64>::new(diag.nrows(), diag.nrows());
         for i in 0..diag.nrows() {
             diag_coo.push(i, i, diag[i] * diag[i]);
         }
 
-        let lhs = jac.transpose() * &jac + nalgebra_sparse::csc::CscMatrix::from(&diag_coo);
+        let lhs = jac.transpose() * &jac + CscMatrix::from(&diag_coo);
         let rhs = jacobian.transpose_and_mul(&residuals);
 
         let cholesky = CscCholesky::factor(&lhs).unwrap();
-        
+
         x.copy_from(&cholesky.solve(&rhs));
+    }
+}
+
+pub struct LevenbergMarquardtDenseSchurComplementSolver {
+    structure: Box<dyn SchurStructure>,
+}
+
+impl LevenbergMarquardtDenseSchurComplementSolver {
+    pub fn new(structure: Box<dyn SchurStructure>) -> Self {
+        LevenbergMarquardtDenseSchurComplementSolver {
+            structure: structure,
+        }
+    }
+}
+
+pub trait SchurStructure {
+    fn reduced_size(&self, jacobian: &CsrBlockMatrix<f64>) -> Option<usize>;
+}
+
+pub struct BundleAdjustmentProblemStructure {}
+
+impl SchurStructure for BundleAdjustmentProblemStructure {
+    fn reduced_size(&self, jacobian: &CsrBlockMatrix<f64>) -> Option<usize> {
+        let mut s = 0;
+        let mut c = jacobian.ncols();
+        for row_data in &jacobian.rows {
+            // Point positions
+            if let Some(column_data) = row_data.columns.first() {
+                let j = column_data.column;
+                let block_size = column_data.data.ncols();
+                s = s.max(j + block_size);
+            }
+
+            // Camera parameters
+            if row_data.columns.len() > 1 {
+                for k in 1..row_data.columns.len() {
+                    let column_data = &row_data.columns[k];
+                    let j = column_data.column;
+                    c = c.min(j);
+                }
+            }
+
+            if c < s {
+                return None;
+            }
+        }
+
+        Some(s)
+    }
+}
+
+impl LevenbergMarquardtLinearSolver for LevenbergMarquardtDenseSchurComplementSolver {
+    fn solve(
+        &self,
+        jacobian: &CsrBlockMatrix<f64>,
+        diag: &na::DVector<f64>,
+        residuals: &na::DVector<f64>,
+        x: &mut na::DVector<f64>,
+    ) {
+        use nalgebra_sparse::{coo::CooMatrix, csc::CscMatrix};
+
+        let reduced_size = self.structure.reduced_size(&jacobian).unwrap();
+        let jac_coo = jacobian.to_sparse_matrix();
+
+        let e_size = reduced_size;
+        let f_size = jacobian.ncols() - reduced_size;
+
+        // Block matrix:
+        // J := | E F |
+        //
+        // M := | A B | = | (E^T * E) (E^T * F) |
+        //      | C D |   | (F^T * E) (F^T * F) |
+        //
+        // Schur complement:
+        // M/A := (E^T * F)^T * (E^T * E)^-1 * (E^T * F)
+
+        // Compute (E^T * E)^-1
+        let mut et_e_diag_value = Vec::<na::DMatrix<f64>>::new();
+        let mut et_e_diag_col = Vec::<usize>::new();
+
+        for row_data in &jacobian.rows {
+            let column_data = row_data.columns.first().unwrap();
+            let j = column_data.column;
+            let block = &column_data.data;
+
+            if let None = et_e_diag_col.iter().position(|x| *x == j) {
+                et_e_diag_value.push(na::DMatrix::from_diagonal(
+                    &diag.rows(j, block.ncols()).map(|x| x * x),
+                ));
+                et_e_diag_col.push(j);
+            }
+        }
+
+        for row_data in &jacobian.rows {
+            for column_data in &row_data.columns {
+                let j = column_data.column;
+                let block = &column_data.data;
+                if j < reduced_size {
+                    let idx = et_e_diag_col.iter().position(|x| *x == j).unwrap();
+                    et_e_diag_value[idx] = &et_e_diag_value[idx] + block.transpose() * block;
+                }
+            }
+        }
+
+        let et_e_diag_inv_value = &et_e_diag_value
+            .iter()
+            .map(|a| a.clone().try_inverse().unwrap())
+            .collect::<Vec<_>>();
+
+        let mut et_e_inv_coo = CooMatrix::<f64>::new(e_size, e_size);
+
+        for (j, m) in et_e_diag_col.iter().zip(et_e_diag_inv_value) {
+            et_e_inv_coo.push_matrix(*j, *j, m);
+        }
+
+        let et_e_inv = CscMatrix::from(&et_e_inv_coo);
+
+        // Compute (F^T * F), (E^T * F)^T = (F^T * E)
+        let mut e_coo = CooMatrix::<f64>::new(jacobian.nrows() + diag.nrows(), e_size);
+        let mut f_coo = CooMatrix::<f64>::new(jacobian.nrows() + diag.nrows(), f_size);
+        for (i, j, value) in jac_coo.triplet_iter() {
+            if j < reduced_size {
+                e_coo.push(i, j, *value);
+            } else {
+                f_coo.push(i, j - reduced_size, *value);
+            }
+        }
+        for i in 0..diag.nrows() {
+            if i < reduced_size {
+                e_coo.push(jacobian.nrows() + i, i, diag[i]);
+            } else {
+                f_coo.push(jacobian.nrows() + i, i - reduced_size, diag[i]);
+            }
+        }
+
+        let e = CscMatrix::from(&e_coo);
+        let f = CscMatrix::from(&f_coo);
+
+        let ft_f = f.transpose() * &f;
+        let ft_e = f.transpose() * &e;
+
+        // Compute schur components
+        let lhs = na::DMatrix::from(&(&ft_f - &ft_e * &et_e_inv * ft_e.transpose()));
+
+        let eps = jacobian.transpose_and_mul(&residuals);
+        let rhs =
+            eps.rows_range(reduced_size..) - &ft_e * &et_e_inv * eps.rows_range(..reduced_size);
+
+        // Dense cholesky factorization
+        let cholesky = &lhs.cholesky().unwrap();
+
+        x.rows_range_mut(reduced_size..)
+            .copy_from(&cholesky.solve(&rhs));
+
+        // Solve backward substitution
+        let y = eps.rows_range(..reduced_size) - ft_e.transpose() * x.rows_range(reduced_size..);
+        for (j, m) in et_e_diag_col.iter().zip(et_e_diag_inv_value) {
+            x.rows_mut(*j, m.nrows())
+                .copy_from(&(m * y.rows(*j, m.nrows())));
+        }
     }
 }
 
