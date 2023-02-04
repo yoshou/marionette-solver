@@ -163,7 +163,7 @@ impl TrustRegionMethod for LevenbergMarquardtMethod {
         let mut x = na::DVector::<f64>::zeros(jacobian.ncols());
         self.linear_solver.solve(&jac_scaled, &diag, &val, &mut x);
 
-        -(na::DMatrix::from_diagonal(&jac_scale) * x)
+        -x.component_mul(&jac_scale)
     }
 }
 
