@@ -55,22 +55,23 @@ impl<T: Functor> ResidualVec for AutoDiffResidualVec<T> {
     }
 
     fn jacobian(&self, params: &Vec<f64>, jacob: &mut Vec<na::DMatrix<f64>>) -> bool {
-        let mut v = params
+        let mut param_blocks: Vec<Vec<Dual>> = self
+            .params
             .iter()
-            .map(|x| Dual { a: *x, b: 0.0 })
-            .collect::<Vec<Dual>>();
+            .map(|x| {
+                params[x.offset..(x.offset + x.size)]
+                    .iter()
+                    .map(|x| Dual { a: *x, b: 0.0 })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
 
-        for block in &self.params {
+        for j in 0..self.params.len() {
             let mut jacob_columns = Vec::<na::DVector<f64>>::new();
-            for i in block.offset..(block.offset + block.size) {
-                v[i].b = 1.0;
+            for i in 0..self.params[j].size {
+                param_blocks[j][i].b = 1.0;
 
                 let mut residuals = vec![Dual::default(); self.f.num_residuals()];
-                let param_blocks = self
-                    .params
-                    .iter()
-                    .map(|x| v[x.offset..(x.offset + x.size)].to_vec())
-                    .collect();
 
                 if !self.f.invoke(&param_blocks, &mut residuals) {
                     return false;
@@ -80,7 +81,7 @@ impl<T: Functor> ResidualVec for AutoDiffResidualVec<T> {
                     residuals.iter().map(|x| x.b).collect(),
                 ));
 
-                v[i].b = 0.0;
+                param_blocks[j][i].b = 0.0;
             }
 
             jacob.push(na::DMatrix::from_columns(&jacob_columns));
