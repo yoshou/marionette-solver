@@ -1,7 +1,4 @@
 use crate::autodiff::{Dual, Functor};
-use crate::levenberg_marquardt::{
-    LevenbergMarquardtSparseNormalCholeskySolver, LevenbergMarquardtLinearSolver,
-};
 use crate::sparse_matrix::CsrBlockMatrix;
 
 extern crate nalgebra as na;
@@ -130,43 +127,6 @@ pub trait TrustRegionMethod {
     ) -> na::DVector<f64>;
 }
 
-pub struct LevenbergMarquardtMethod {
-    linear_solver: Box<dyn LevenbergMarquardtLinearSolver>,
-}
-
-impl LevenbergMarquardtMethod {
-    fn new(linear_solver: Box<dyn LevenbergMarquardtLinearSolver>) -> Self {
-        LevenbergMarquardtMethod {
-            linear_solver: linear_solver,
-        }
-    }
-}
-
-impl TrustRegionMethod for LevenbergMarquardtMethod {
-    fn compute_step(
-        &self,
-        val: &na::DVector<f64>,
-        jacobian: &CsrBlockMatrix<f64>,
-        mu: f64,
-    ) -> na::DVector<f64> {
-        let jac_scale = jacobian
-            .column_norm_squared()
-            .map(|x| 1.0 / (1.0 + x.sqrt()));
-
-        let jac_scaled = jacobian.scale_columns(&jac_scale);
-
-        let lambda = 1.0 / mu;
-        let diag = jac_scaled
-            .column_norm_squared()
-            .map(|x| (x.clamp(1.0e-6, 1.0e+32) * lambda).sqrt());
-
-        let mut x = na::DVector::<f64>::zeros(jacobian.ncols());
-        self.linear_solver.solve(&jac_scaled, &diag, &val, &mut x);
-
-        -x.component_mul(&jac_scale)
-    }
-}
-
 pub struct TrustRegionSolver {
     pub params: Vec<f64>,
     pub max_iteration: u32,
@@ -181,7 +141,7 @@ pub struct TrustRegionSolver {
 }
 
 impl TrustRegionSolver {
-    pub fn new(params: Vec<f64>) -> Self {
+    pub fn new(params: Vec<f64>, method: Box<dyn TrustRegionMethod>) -> Self {
         TrustRegionSolver {
             params: params,
             max_iteration: 10,
@@ -189,9 +149,7 @@ impl TrustRegionSolver {
             eta: 0.001,
             max_mu: 10000000000000000.0,
             function_tolerance: 1.0e-6,
-            method: Box::new(LevenbergMarquardtMethod::new(Box::new(
-                LevenbergMarquardtSparseNormalCholeskySolver {},
-            ))),
+            method: method,
             iteration: TrustRegionSolverIteration {
                 num: 0,
                 gradient_max_norm: 1e+10,

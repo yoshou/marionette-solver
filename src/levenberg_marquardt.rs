@@ -1,5 +1,6 @@
 extern crate nalgebra as na;
 
+use crate::problem::TrustRegionMethod;
 use crate::sparse_matrix::CsrBlockMatrix;
 use nalgebra_sparse::factorization::CscCholesky;
 
@@ -14,6 +15,12 @@ pub trait LevenbergMarquardtLinearSolver {
 }
 
 pub struct LevenbergMarquardtDenseQRSolver {}
+
+impl LevenbergMarquardtDenseQRSolver {
+    pub fn new() -> Self {
+        LevenbergMarquardtDenseQRSolver {}
+    }
+}
 
 impl LevenbergMarquardtLinearSolver for LevenbergMarquardtDenseQRSolver {
     fn solve(
@@ -47,6 +54,12 @@ impl LevenbergMarquardtLinearSolver for LevenbergMarquardtDenseQRSolver {
 
 pub struct LevenbergMarquardtDenseNormalCholeskySolver {}
 
+impl LevenbergMarquardtDenseNormalCholeskySolver {
+    pub fn new() -> Self {
+        LevenbergMarquardtDenseNormalCholeskySolver {}
+    }
+}
+
 impl LevenbergMarquardtLinearSolver for LevenbergMarquardtDenseNormalCholeskySolver {
     fn solve(
         &self,
@@ -67,6 +80,12 @@ impl LevenbergMarquardtLinearSolver for LevenbergMarquardtDenseNormalCholeskySol
 }
 
 pub struct LevenbergMarquardtSparseNormalCholeskySolver {}
+
+impl LevenbergMarquardtSparseNormalCholeskySolver {
+    pub fn new() -> Self {
+        LevenbergMarquardtSparseNormalCholeskySolver {}
+    }
+}
 
 impl LevenbergMarquardtLinearSolver for LevenbergMarquardtSparseNormalCholeskySolver {
     fn solve(
@@ -251,6 +270,43 @@ impl LevenbergMarquardtLinearSolver for LevenbergMarquardtDenseSchurComplementSo
             x.rows_mut(*j, m.nrows())
                 .copy_from(&(m * y.rows(*j, m.nrows())));
         }
+    }
+}
+
+pub struct LevenbergMarquardtMethod {
+    linear_solver: Box<dyn LevenbergMarquardtLinearSolver>,
+}
+
+impl LevenbergMarquardtMethod {
+    pub fn new(linear_solver: Box<dyn LevenbergMarquardtLinearSolver>) -> Self {
+        LevenbergMarquardtMethod {
+            linear_solver: linear_solver,
+        }
+    }
+}
+
+impl TrustRegionMethod for LevenbergMarquardtMethod {
+    fn compute_step(
+        &self,
+        val: &na::DVector<f64>,
+        jacobian: &CsrBlockMatrix<f64>,
+        mu: f64,
+    ) -> na::DVector<f64> {
+        let jac_scale = jacobian
+            .column_norm_squared()
+            .map(|x| 1.0 / (1.0 + x.sqrt()));
+
+        let jac_scaled = jacobian.scale_columns(&jac_scale);
+
+        let lambda = 1.0 / mu;
+        let diag = jac_scaled
+            .column_norm_squared()
+            .map(|x| (x.clamp(1.0e-6, 1.0e+32) * lambda).sqrt());
+
+        let mut x = na::DVector::<f64>::zeros(jacobian.ncols());
+        self.linear_solver.solve(&jac_scaled, &diag, &val, &mut x);
+
+        -x.component_mul(&jac_scale)
     }
 }
 
