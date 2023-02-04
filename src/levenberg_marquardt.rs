@@ -170,6 +170,7 @@ impl LevenbergMarquardtLinearSolver for LevenbergMarquardtDenseSchurComplementSo
         x: &mut na::DVector<f64>,
     ) {
         use nalgebra_sparse::{coo::CooMatrix, csc::CscMatrix};
+        use std::collections::HashMap;
 
         let reduced_size = self.structure.reduced_size(&jacobian).unwrap();
         let jac_coo = jacobian.to_sparse_matrix();
@@ -187,20 +188,18 @@ impl LevenbergMarquardtLinearSolver for LevenbergMarquardtDenseSchurComplementSo
         // M/A := (E^T * F)^T * (E^T * E)^-1 * (E^T * F)
 
         // Compute (E^T * E)^-1
-        let mut et_e_diag_value = Vec::<na::DMatrix<f64>>::new();
-        let mut et_e_diag_col = Vec::<usize>::new();
+        let mut et_e_diag_inv_values = HashMap::<usize, na::DMatrix<f64>>::new();
 
         for row_data in &jacobian.rows {
             let column_data = row_data.columns.first().unwrap();
             let j = column_data.column;
             let block = &column_data.data;
 
-            if let None = et_e_diag_col.iter().position(|x| *x == j) {
-                et_e_diag_value.push(na::DMatrix::from_diagonal(
+            et_e_diag_inv_values
+                .entry(j)
+                .or_insert(na::DMatrix::from_diagonal(
                     &diag.rows(j, block.ncols()).map(|x| x * x),
                 ));
-                et_e_diag_col.push(j);
-            }
         }
 
         for row_data in &jacobian.rows {
@@ -208,20 +207,19 @@ impl LevenbergMarquardtLinearSolver for LevenbergMarquardtDenseSchurComplementSo
                 let j = column_data.column;
                 let block = &column_data.data;
                 if j < reduced_size {
-                    let idx = et_e_diag_col.iter().position(|x| *x == j).unwrap();
-                    et_e_diag_value[idx] = &et_e_diag_value[idx] + block.transpose() * block;
+                    let et_e_diag_inv_value = et_e_diag_inv_values.get_mut(&j).unwrap();
+                    *et_e_diag_inv_value = et_e_diag_inv_value.clone() + block.transpose() * block;
                 }
             }
         }
 
-        let et_e_diag_inv_value = &et_e_diag_value
-            .iter()
-            .map(|a| a.clone().try_inverse().unwrap())
-            .collect::<Vec<_>>();
-
         let mut et_e_inv_coo = CooMatrix::<f64>::new(e_size, e_size);
 
-        for (j, m) in et_e_diag_col.iter().zip(et_e_diag_inv_value) {
+        for m in et_e_diag_inv_values.values_mut() {
+            *m = m.clone().try_inverse().unwrap();
+        }
+
+        for (j, m) in &et_e_diag_inv_values {
             et_e_inv_coo.push_matrix(*j, *j, m);
         }
 
@@ -248,8 +246,9 @@ impl LevenbergMarquardtLinearSolver for LevenbergMarquardtDenseSchurComplementSo
         let e = CscMatrix::from(&e_coo);
         let f = CscMatrix::from(&f_coo);
 
-        let ft_f = f.transpose() * &f;
-        let ft_e = f.transpose() * &e;
+        let ft = f.transpose();
+        let ft_f = &ft * &f;
+        let ft_e = &ft * &e;
 
         // Compute schur components
         let lhs = na::DMatrix::from(&(&ft_f - &ft_e * &et_e_inv * ft_e.transpose()));
@@ -266,7 +265,7 @@ impl LevenbergMarquardtLinearSolver for LevenbergMarquardtDenseSchurComplementSo
 
         // Solve backward substitution
         let y = eps.rows_range(..reduced_size) - ft_e.transpose() * x.rows_range(reduced_size..);
-        for (j, m) in et_e_diag_col.iter().zip(et_e_diag_inv_value) {
+        for (j, m) in &et_e_diag_inv_values {
             x.rows_mut(*j, m.nrows())
                 .copy_from(&(m * y.rows(*j, m.nrows())));
         }
