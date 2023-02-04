@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::fs::OpenOptions;
 use std::io::BufReader;
 
-use marionette_solver::autodiff::{angle_axis_rotate_point, Functor, ValueOrDerivative};
+use marionette_solver::autodiff::{Functor, ValueOrDerivative};
 use marionette_solver::levenberg_marquardt::{
     BundleAdjustmentProblemStructure, LevenbergMarquardtDenseSchurComplementSolver,
     LevenbergMarquardtMethod,
@@ -14,7 +14,7 @@ use marionette_solver::problem::{
     AutoDiffResidualVec, NonlinearLeastSquaresProblem, NonlinearLeastSquaresSolver, ParameterBlock,
     TrustRegionSolver,
 };
-use std::ops::AddAssign;
+use marionette_solver::rotation::angle_axis_rotate_point;
 
 struct SnavelyReprojectionError {
     observed_x: f64,
@@ -36,7 +36,7 @@ impl Functor for SnavelyReprojectionError {
     }
     fn invoke<T>(&self, params: &Vec<Vec<T>>, residuals: &mut Vec<T>) -> bool
     where
-        T: ValueOrDerivative + Default + AddAssign,
+        T: ValueOrDerivative + Default,
     {
         let camera = &params[0];
         let point = &params[1];
