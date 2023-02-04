@@ -194,7 +194,7 @@ impl TrustRegionSolver {
                 .iter()
                 .zip(&residual_jacob)
                 .collect::<Vec<_>>();
-            it.sort_by_key(|(a, b)| a.offset);
+            it.sort_by_key(|(a, _)| a.offset);
 
             for (param_block, jacob_block) in it {
                 if !jacobian.add_row_block(param_block.offset, &jacob_block) {
@@ -206,7 +206,7 @@ impl TrustRegionSolver {
                 return None;
             }
 
-            val.slice_mut((row_pos, 0), (residual.num_residuals(), 1))
+            val.rows_mut(row_pos, residual.num_residuals())
                 .copy_from_slice(&residual_val);
 
             row_pos = row_pos + residual.num_residuals();
@@ -241,7 +241,7 @@ impl TrustRegionSolver {
 
             residual.eval(&params.data.as_vec(), &mut residual_val);
 
-            val.slice_mut((row_pos, 0), (residual.num_residuals(), 1))
+            val.rows_mut(row_pos, residual.num_residuals())
                 .copy_from_slice(&residual_val);
 
             row_pos = row_pos + residual.num_residuals()
