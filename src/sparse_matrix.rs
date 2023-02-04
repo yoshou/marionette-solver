@@ -1,8 +1,7 @@
 use na::Scalar;
 
 extern crate nalgebra as na;
-use nalgebra_sparse::{coo::CooMatrix};
-use nalgebra_sparse::csc::CscMatrix;
+use nalgebra_sparse::coo::CooMatrix;
 
 #[derive(Clone)]
 pub struct CsrColumnData<T> {
@@ -77,7 +76,6 @@ impl<T: na::RealField + Copy> CsrBlockMatrix<T> {
     pub fn scale_columns(&self, scale: &na::DVector<T>) -> CsrBlockMatrix<T> {
         let mut scaled = self.clone();
 
-        let mut i = 0;
         for row_data in &mut scaled.rows {
             for column_data in &mut row_data.columns {
                 let j = column_data.column;
@@ -86,7 +84,6 @@ impl<T: na::RealField + Copy> CsrBlockMatrix<T> {
                 let scale_vec = scale.rows(j, block.ncols());
                 column_data.data = block * na::DMatrix::from_diagonal(&scale_vec);
             }
-            i += row_data.num_block_rows;
         }
 
         scaled
@@ -135,7 +132,6 @@ impl<T: na::RealField + Copy> CsrBlockMatrix<T> {
     pub fn column_norm_squared(&self) -> na::DVector<T> {
         let mut column_norm_squared = na::DVector::<T>::zeros(self.num_cols);
 
-        let mut i = 0;
         for row_data in &self.rows {
             for column_data in &row_data.columns {
                 let j = column_data.column;
@@ -149,7 +145,6 @@ impl<T: na::RealField + Copy> CsrBlockMatrix<T> {
                 let mut block_vec = column_norm_squared.rows_mut(j, block.ncols());
                 block_vec.copy_from(&(&block_vec + block_column_norm_squared));
             }
-            i += row_data.num_block_rows;
         }
 
         column_norm_squared
@@ -163,7 +158,7 @@ impl<T: na::RealField + Copy> CsrBlockMatrix<T> {
             for column_data in &row_data.columns {
                 let j = column_data.column;
 
-                m.slice_range_mut(
+                m.view_range_mut(
                     i..(i + column_data.data.nrows()),
                     j..(j + column_data.data.ncols()),
                 )

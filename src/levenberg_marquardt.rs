@@ -35,12 +35,12 @@ impl LevenbergMarquardtLinearSolver for LevenbergMarquardtDenseQRSolver {
         let mut lhs = na::DMatrix::<f64>::zeros(jac.nrows() + diag.nrows(), jac.ncols());
         let mut rhs = na::DVector::<f64>::zeros(jac.nrows() + diag.nrows());
 
-        lhs.slice_mut((0, 0), (jac.nrows(), jac.ncols()))
+        lhs.view_mut((0, 0), (jac.nrows(), jac.ncols()))
             .copy_from(&jac);
-        lhs.slice_mut((jac.nrows(), 0), (diag.nrows(), jac.ncols()))
+        lhs.view_mut((jac.nrows(), 0), (diag.nrows(), jac.ncols()))
             .copy_from(&na::DMatrix::from_diagonal(&diag));
 
-        rhs.slice_mut((0, 0), (residuals.nrows(), 1))
+        rhs.rows_range_mut(..residuals.nrows())
             .copy_from(&residuals);
 
         let qr = &lhs.qr();
@@ -324,8 +324,8 @@ fn solve_upper_triangular(
         let diag = r[(i, i)];
 
         x[i] = (qt_mul_b[i]
-            - r.slice_range(i..(i + 1), (i + 1)..)
-                .dot(&x.transpose().slice_range(0..1, (i + 1)..)))
+            - r.view_range(i..(i + 1), (i + 1)..)
+                .dot(&x.transpose().view_range(0..1, (i + 1)..)))
             / diag;
     }
 
