@@ -122,7 +122,7 @@ impl<T: na::RealField + Copy> CsrBlockMatrix<T> {
                 let block_vec = v.rows(i, block.nrows());
 
                 let mut result_block_vec = result.rows_mut(j, block.ncols());
-                result_block_vec.copy_from(&(&result_block_vec + block.transpose() * block_vec));
+                result_block_vec.copy_from(&(&result_block_vec + block.tr_mul(&block_vec)));
             }
             i += row_data.num_block_rows;
         }
@@ -165,7 +165,7 @@ impl<T: na::RealField + Copy> CsrBlockMatrix<T> {
                     let j2 = column_data2.column;
                     let block2 = &column_data2.data;
 
-                    let prod = block1.transpose() * block2;
+                    let prod = block1.tr_mul(block2);
 
                     if let Some(m) = producted_terms.get_mut(&(j1, j2)) {
                         m.add_assign(prod);
