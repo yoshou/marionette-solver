@@ -95,16 +95,17 @@ impl LevenbergMarquardtLinearSolver for LevenbergMarquardtSparseNormalCholeskySo
         residuals: &na::DVector<f64>,
         x: &mut na::DVector<f64>,
     ) {
-        use nalgebra_sparse::{coo::CooMatrix, csc::CscMatrix};
+        use nalgebra_sparse::csc::CscMatrix;
 
-        let jac = CscMatrix::from(&jacobian.to_sparse_matrix());
-
-        let mut diag_coo = CooMatrix::<f64>::new(diag.nrows(), diag.nrows());
-        for i in 0..diag.nrows() {
-            diag_coo.push(i, i, diag[i] * diag[i]);
+        let mut jacobian_with_diag = jacobian.clone();
+        for (j, size) in jacobian.column_blocks() {
+            jacobian_with_diag.add_row(size);
+            jacobian_with_diag.add_row_block(j, &na::DMatrix::from_diagonal(&diag.rows(j, size)));
         }
 
-        let lhs = jac.transpose() * &jac + CscMatrix::from(&diag_coo);
+        let gram = jacobian_with_diag.gramian();
+        let lhs = CscMatrix::from(&gram.to_sparse_matrix());
+
         let rhs = jacobian.transpose_and_mul(&residuals);
 
         let cholesky = CscCholesky::factor(&lhs).unwrap();
