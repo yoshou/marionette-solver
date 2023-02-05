@@ -1,4 +1,5 @@
 use na::Scalar;
+use std::ops::AddAssign;
 
 extern crate nalgebra as na;
 use nalgebra_sparse::coo::CooMatrix;
@@ -148,6 +149,70 @@ impl<T: na::RealField + Copy> CsrBlockMatrix<T> {
         }
 
         column_norm_squared
+    }
+
+    pub fn gramian(&self) -> CsrBlockMatrix<T> {
+        use std::collections::HashMap;
+
+        let mut producted_terms = HashMap::<(usize, usize), na::DMatrix<T>>::new();
+
+        for row_data in &self.rows {
+            for column_data1 in &row_data.columns {
+                let j1 = column_data1.column;
+                let block1 = &column_data1.data;
+
+                for column_data2 in &row_data.columns {
+                    let j2 = column_data2.column;
+                    let block2 = &column_data2.data;
+
+                    let prod = block1.transpose() * block2;
+
+                    if let Some(m) = producted_terms.get_mut(&(j1, j2)) {
+                        m.add_assign(prod);
+                    } else {
+                        producted_terms.insert((j1, j2), prod);
+                    }
+                }
+            }
+        }
+
+        let mut vec: Vec<_> = producted_terms.into_iter().collect();
+        vec.sort_by(|(a, _), (b, _)| (a.0 * self.num_cols + a.1).cmp(&(b.0 * self.num_cols + b.1)));
+
+        let mut gram = CsrBlockMatrix::new();
+
+        let mut row = 0;
+        let mut columns = Vec::<CsrColumnData<na::DMatrix<T>>>::new();
+        for ((i, j), m) in vec {
+            if i != row {
+                let num_row = columns.first().unwrap().data.nrows();
+
+                assert!(i == row + num_row);
+
+                gram.add_row(num_row);
+
+                for column in columns {
+                    gram.add_row_block(column.column, &column.data);
+                }
+
+                columns = Vec::<CsrColumnData<na::DMatrix<T>>>::new();
+            }
+            let col_data = CsrColumnData::<na::DMatrix<T>> { column: j, data: m };
+
+            columns.push(col_data);
+            row = i;
+        }
+
+        if !columns.is_empty() {
+            let num_row = columns.first().unwrap().data.nrows();
+            gram.add_row(num_row);
+
+            for column in columns {
+                gram.add_row_block(column.column, &column.data);
+            }
+        }
+
+        gram
     }
 
     pub fn to_dense_matrix(&self) -> na::DMatrix<T> {
