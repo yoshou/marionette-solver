@@ -299,10 +299,12 @@ impl TrustRegionSolver {
         Some((val, grad, jacobian))
     }
 
-    fn need_next_iteration(&self) -> bool {
+    fn need_next_iteration_or_terminate(&self, result: &mut SolveResult) -> bool {
         if self.iteration.num >= self.max_iteration {
+            result.termination_status = TerminationStatus::NotConverged;
             false
         } else if self.iteration.gradient_max_norm < self.gradient_tolerance {
+            result.termination_status = TerminationStatus::Converged;
             false
         } else {
             true
@@ -348,7 +350,7 @@ impl NonlinearLeastSquaresSolver for TrustRegionSolver {
             termination_status: TerminationStatus::NotConverged,
         };
 
-        while self.need_next_iteration() {
+        while self.need_next_iteration_or_terminate(&mut result) {
             if let Some((val, grad, jac)) = self.evaluate_grad_and_jacobian(p) {
                 self.iteration.gradient_max_norm = grad.abs().max();
                 self.iteration.gradient_norm = grad.norm();
