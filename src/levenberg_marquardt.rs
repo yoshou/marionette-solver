@@ -2,7 +2,6 @@ extern crate nalgebra as na;
 
 use crate::nls_problem::TrustRegionMethod;
 use crate::sparse_matrix::CsrBlockMatrix;
-use nalgebra_sparse::factorization::CscCholesky;
 
 pub trait LevenbergMarquardtLinearSolver {
     fn solve(
@@ -96,6 +95,7 @@ impl LevenbergMarquardtLinearSolver for LevenbergMarquardtSparseNormalCholeskySo
         x: &mut na::DVector<f64>,
     ) {
         use nalgebra_sparse::csc::CscMatrix;
+        use nalgebra_sparse::factorization::CscCholesky;
 
         let mut jacobian_with_diag = jacobian.clone();
         for (j, size) in jacobian.column_blocks() {
