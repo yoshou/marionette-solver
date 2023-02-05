@@ -215,6 +215,26 @@ impl<T: na::RealField + Copy> CsrBlockMatrix<T> {
         gram
     }
 
+    pub fn column_blocks(&self) -> Vec<(usize, usize)> {
+        use std::collections::HashSet;
+
+        let mut columns = HashSet::<(usize, usize)>::new();
+
+        for row_data in &self.rows {
+            for column_data in &row_data.columns {
+                let j = column_data.column;
+                let block = &column_data.data;
+
+                columns.insert((j, block.ncols()));
+            }
+        }
+
+        let mut vec: Vec<_> = columns.into_iter().collect();
+        vec.sort_by(|a, b| a.0.cmp(&b.0));
+
+        vec
+    }
+
     pub fn to_dense_matrix(&self) -> na::DMatrix<T> {
         let mut m = na::DMatrix::<T>::zeros(self.num_rows, self.num_cols);
 
