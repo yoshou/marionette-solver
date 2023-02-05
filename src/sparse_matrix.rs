@@ -264,11 +264,7 @@ impl<T: na::RealField + Copy> CsrBlockMatrix<T> {
                 let j = column_data.column;
                 let block = &column_data.data;
 
-                for ii in 0..column_data.data.nrows() {
-                    for jj in 0..column_data.data.ncols() {
-                        coo.push(ii + i, jj + j, block[(ii, jj)]);
-                    }
-                }
+                coo.push_matrix(i, j, block);
             }
             i += row_data.num_block_rows;
         }
